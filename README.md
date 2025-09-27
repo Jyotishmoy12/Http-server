@@ -149,3 +149,36 @@ This means:
 
 ---
 
+## Headers (Field-Lines)
+
+The RFC doesn’t actually call them “headers.” Instead, it uses the term **field-line**, but in practice they mean the same thing.
+
+From **RFC 9110, Section 5 – Field Syntax**:
+
+```
+field-line   = field-name ":" OWS field-value OWS
+```
+
+* **field-name** → Case-insensitive header name (e.g., `Host`, `User-Agent`).
+* **:** → Must directly follow the field-name (no spaces before the colon).
+* **OWS (Optional Whitespace)** → Allowed before and after the field-value.
+* **field-value** → The actual value of the header.
+
+### Valid Examples
+
+```
+Host: localhost:42069
+          Host: localhost:42069    
+```
+
+### Invalid Example
+
+```
+Host : localhost:42069
+```
+
+Important:
+
+* Unlimited whitespace is allowed before/after the **value**.
+* No whitespace is allowed between the **field-name** and the colon.
+
