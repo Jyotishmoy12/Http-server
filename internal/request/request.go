@@ -5,6 +5,7 @@
 package request
 
 import (
+	"HttpFromTcp/internal/headers"
 	"bytes"
 	"errors"
 	"fmt"
@@ -14,11 +15,13 @@ import (
 
 const (
 	StateRequestLine = iota // initial state, value is 0
+	StateHeaders            // parsing headers
 	StateDone               // parsing is complete value is 1
 )
 
 type Request struct {
 	RequestLine RequestLine
+	Headers     headers.Headers
 	state       int // tracks the current state of the parser
 }
 
@@ -30,7 +33,8 @@ type RequestLine struct {
 
 func RequestFromReader(reader io.Reader) (*Request, error) {
 	req := &Request{
-		state: StateRequestLine, // start with the request line
+		state:   StateRequestLine, // start with the request line
+		Headers: headers.NewHeaders(),
 	}
 	// buffer accumulate data across multiple reads from the stream
 	var buffer []byte
@@ -47,7 +51,9 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 			return nil, fmt.Errorf("failed to read from reader:%w", err)
 		}
 		// 2: append the newly read chunk to our main buffer
-		buffer = append(buffer, tmp[:n]...)
+		if n > 0 {
+			buffer = append(buffer, tmp[:n]...)
+		}
 
 		// 3: pass the accumulated buffer to the state machine to parse what it can
 		bytesConsumed, parseErr := req.parse(buffer)
@@ -60,35 +66,65 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		// 5: if we have reached the end of the stream EOF
 		// and our buffer is emoty.
 		// we cant read any more data from the stream
-		if err == io.EOF && len(buffer) == 0 {
+		if err == io.EOF {
 			break
 		}
 	}
-	// After the loop, if the parser isn't in the "Done" state, it means the
-	// stream ended before we could parse a complete request line.
 	if req.state != StateDone {
-		return nil, errors.New("incomplete request: stream ended before request line was parsed")
+		return nil, errors.New("incomplete request: stream ended before request was fully parsed")
 	}
-
 	return req, nil
 }
+
+// 'parse' is now a driver loop that calls 'parseSingle' repeatedly.
 func (r *Request) parse(data []byte) (int, error) {
+	totalBytesParsed := 0
+	for r.state != StateDone {
+		// If there's no more data in the current chunk, break to read more.
+		if len(data[totalBytesParsed:]) == 0 {
+			break
+		}
+
+		// 'parseSingle' does the actual state-based parsing.
+		n, err := r.parseSingle(data[totalBytesParsed:])
+		if err != nil {
+			return 0, err
+		}
+		if n == 0 { // parseSingle needs more data
+			break
+		}
+		totalBytesParsed += n
+	}
+	return totalBytesParsed, nil
+}
+
+// 'parseSingle' contains the state machine logic for parsing one piece at a time.
+func (r *Request) parseSingle(data []byte) (int, error) {
 	if r.state == StateRequestLine {
-		// try to parse the request line from the current data
 		rl, bytesConsumed, err := parseRequestLine(data)
 		if err != nil {
 			return 0, err
 		}
-		// if bytesConsumed is 0 it means we need more data
 		if bytesConsumed == 0 {
-			return 0, nil
+			return 0, nil // Need more data
 		}
-		// success! update the request and change the state
 		r.RequestLine = rl
-		r.state = StateDone
+		r.state = StateHeaders // Transition to parsing headers
 		return bytesConsumed, nil
 	}
-	return 0, nil
+
+	if r.state == StateHeaders {
+		n, done, err := r.Headers.Parse(data)
+		if err != nil {
+			return 0, err
+		}
+		if done {
+			r.state = StateDone // Headers are finished, transition to Done
+		}
+		return n, nil
+	}
+
+	return 0, nil // Should not happen
 }
 
 // parseRequestLine now takes a byte slice and returns the number of bytes consumed.
