@@ -182,3 +182,17 @@ Important:
 * Unlimited whitespace is allowed before/after the **value**.
 * No whitespace is allowed between the **field-name** and the colon.
 
+### Ideal HTTP format
+
+```
+Request line:
+- Method: METHOD
+- Target: TARGET
+- Version: VERSION
+Headers:
+- KEY: VALUE
+- KEY: VALUE
+Body:
+BODY_STRING
+
+```

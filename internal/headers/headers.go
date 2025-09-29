@@ -13,6 +13,11 @@ type Headers map[string]string
 func NewHeaders() Headers {
 	return make(Headers)
 }
+// get performs a case-insensitive key lookup
+
+func (h Headers) Get(key string) string{
+	return h[strings.ToLower(key)]
+}
 
 // isValidTchar checks if a byte is a valid "tchar" as defined by RFC 9110.
 func isValidTchar(b byte) bool {

@@ -26,6 +26,10 @@ func handleConnection(conn net.Conn) {
 		fmt.Printf("- %s: %s\n", key, value)
 	}
 
+	if len(req.Body) >0 {
+		fmt.Println("Body:")
+		fmt.Println(string(req.Body))
+	}
 	fmt.Println("Connection closed:", conn.RemoteAddr())
 }
 
