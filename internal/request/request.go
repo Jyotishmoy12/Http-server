@@ -5,12 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strconv" // New import for converting strings to integers
+	"strconv"
 
 	"HttpFromTcp/internal/headers"
 )
 
-// Add the new StateBody
 const (
 	StateRequestLine = iota
 	StateHeaders
@@ -21,7 +20,7 @@ const (
 type Request struct {
 	RequestLine RequestLine
 	Headers     headers.Headers
-	Body        []byte // Add the Body field
+	Body        []byte
 	state       int
 }
 
@@ -51,6 +50,13 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 			return nil, parseErr
 		}
 		buffer = buffer[bytesConsumed:]
+		
+		// FIX: Check if we're done BEFORE checking EOF
+		// This handles the case where we finished parsing but haven't hit EOF yet
+		if req.state == StateDone {
+			break
+		}
+		
 		if err == io.EOF {
 			if req.state != StateDone {
 				return nil, errors.New("incomplete request: stream ended before request was fully parsed")
@@ -71,6 +77,11 @@ func (r *Request) parse(data []byte) (int, error) {
 		if err != nil {
 			return 0, err
 		}
+		// FIX: Check if state is done BEFORE checking n == 0
+		// This handles the case where we transition to StateDone but return 0 bytes
+		if r.state == StateDone {
+			return totalBytesParsed, nil
+		}
 		if n == 0 {
 			break
 		}
@@ -79,7 +90,6 @@ func (r *Request) parse(data []byte) (int, error) {
 	return totalBytesParsed, nil
 }
 
-// parseSingle now includes logic for parsing the body.
 func (r *Request) parseSingle(data []byte) (int, error) {
 	// Step 1: Parse the request line.
 	if r.state == StateRequestLine {
@@ -91,7 +101,7 @@ func (r *Request) parseSingle(data []byte) (int, error) {
 			return 0, nil
 		}
 		r.RequestLine = rl
-		r.state = StateHeaders // Transition to parsing headers.
+		r.state = StateHeaders
 		return bytesConsumed, nil
 	}
 
@@ -102,7 +112,7 @@ func (r *Request) parseSingle(data []byte) (int, error) {
 			return 0, err
 		}
 		if done {
-			r.state = StateBody // When headers are done, transition to parsing the body.
+			r.state = StateBody
 		}
 		return n, nil
 	}
@@ -152,7 +162,7 @@ func (r *Request) parseSingle(data []byte) (int, error) {
 
 	return 0, nil
 }
-// parseRequestLine remains unchanged
+
 func parseRequestLine(data []byte) (RequestLine, int, error) {
 	crlfIndex := bytes.Index(data, []byte("\r\n"))
 	if crlfIndex == -1 {
@@ -164,19 +174,29 @@ func parseRequestLine(data []byte) (RequestLine, int, error) {
 	if len(parts) != 3 {
 		return RequestLine{}, 0, fmt.Errorf("invalid request line: expected 3 parts, got %d", len(parts))
 	}
+
 	method, target, versionRaw := parts[0], parts[1], parts[2]
+
 	for _, char := range method {
 		if char < 'A' || char > 'Z' {
 			return RequestLine{}, 0, fmt.Errorf("invalid method '%s': must be all uppercase", string(method))
 		}
 	}
-	if string(versionRaw) != "HTTP/1.1" {
-		return RequestLine{}, 0, fmt.Errorf("invalid http version '%s': only HTTP/1.1 is supported", string(versionRaw))
+	versionStr := string(versionRaw)
+	var httpVersion string
+	switch versionStr {
+	case "HTTP/1.1":
+		httpVersion = "1.1"
+	case "HTTP/1.0":
+		httpVersion = "1.0"
+	default:
+		return RequestLine{}, 0, fmt.Errorf("invalid http version '%s': only HTTP/1.1 and HTTP/1.0 are supported", versionStr)
 	}
+
 	rl := RequestLine{
 		Method:        string(method),
 		RequestTarget: string(target),
-		HttpVersion:   "1.1",
+		HttpVersion:   httpVersion,
 	}
 	return rl, bytesConsumed, nil
 }

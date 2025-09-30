@@ -2,57 +2,45 @@ package main
 
 import (
 	"HttpFromTcp/internal/request"
+	"HttpFromTcp/internal/response"
+	"HttpFromTcp/internal/server"
+	"bytes"
 	"fmt"
 	"log"
-	"net"
 )
 
-func handleConnection(conn net.Conn) {
-	defer conn.Close()
-	fmt.Println("Accepted connection from:", conn.RemoteAddr())
-
-	req, err := request.RequestFromReader(conn)
-	if err != nil {
-		log.Println("Error reading request:", err)
-		return
+// appHandler contains our specific routing and business logic.
+func appHandler(w *bytes.Buffer, req *request.Request) *server.HandlerError {
+	// Route based on the request target (path).
+	switch req.RequestLine.RequestTarget {
+	case "/yourproblem":
+		// Return a 400 Bad Request error.
+		return &server.HandlerError{
+			StatusCode: response.StatusBadRequest,
+			Message:    "Your problem is not my problem\n",
+		}
+	case "/myproblem":
+		// Return a 500 Internal Server Error.
+		return &server.HandlerError{
+			StatusCode: response.StatusInternalServerError,
+			Message:    "Woopsie, my bad\n",
+		}
+	default:
+		// For all other paths, write a success message to the response body.
+		fmt.Fprint(w, "All good, frfr\n")
+		// Return nil to indicate success.
+		return nil
 	}
-	// If successful, print the RequestLine in the specified format.
-	fmt.Println("Request line:")
-	fmt.Printf("- Method: %s\n", req.RequestLine.Method)
-	fmt.Printf("- Target: %s\n", req.RequestLine.RequestTarget)
-	fmt.Printf("- Version: %s\n", req.RequestLine.HttpVersion)
-	fmt.Println("Headers:")
-	for key, value := range req.Headers {
-		fmt.Printf("- %s: %s\n", key, value)
-	}
-
-	if len(req.Body) >0 {
-		fmt.Println("Body:")
-		fmt.Println(string(req.Body))
-	}
-	fmt.Println("Connection closed:", conn.RemoteAddr())
 }
 
 func main() {
-	// waits for tcp connection on port 42069
-	ln, err := net.Listen("tcp", ":42069")
+	// Pass our application handler to the server.
+	s, err := server.Serve(42069, appHandler)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Failed to start server: %v", err)
 	}
-	defer ln.Close()
+	defer s.Close()
 
-	fmt.Println("Listening on:42069....")
-
-	for {
-		// blocks until a client connects
-		// Accept waits for and returns the next connection to the listener
-		conn, err := ln.Accept()
-		if err != nil {
-			log.Println("accept error:", err)
-			continue
-		}
-		// reads 8 bytes at a time, reconstructs lines and sends them to a channel
-		// each clinet is handled in a separate goroutine
-		go handleConnection(conn)
-	}
+	// Keep the server running until manually stopped.
+	select {}
 }
